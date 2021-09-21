@@ -1,0 +1,20 @@
+version: '2'
+services:
+  ramiel.discord:
+    environment:
+      DiscordToken: ""
+      DiscordGuildId: ""
+      DiscordRemoveCommands: "false"
+      LavalinkEndpoint: "lavalink:2333"
+      LavalinkPassword: "youshallnotpass"
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on: 
+      - lavalink
+
+  lavalink:
+    image: fredboat/lavalink:master-vv3.3.2.5
+    volumes:
+      - ./config/lavalink.yml:/opt/Lavalink/application.yml
+  
