@@ -2,11 +2,11 @@ version: '2'
 services:
   ramiel.discord:
     environment:
-      DiscordToken: ""
-      DiscordGuildId: ""
-      DiscordRemoveCommands: "false"
-      LavalinkEndpoint: "lavalink:2333"
-      LavalinkPassword: "youshallnotpass"
+      DISCORD_TOKEN: ""
+      DISCORD_GUILD_ID: ""
+      DISCORD_REMOVE_COMMANDS: "false"
+      LAVALINK_ENDPOINT: "lavalink:2333"
+      LAVALINK_PASSWORD: "youshallnotpass"
     build:
       context: .
       dockerfile: Dockerfile

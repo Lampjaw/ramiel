@@ -5,23 +5,22 @@ import (
 	"math/rand"
 	"time"
 
-	"ramiel/pkg/youtube"
+	"ramiel/internal/youtube"
 
 	"github.com/bwmarrin/discordgo"
 )
 
 type MusicPlayer struct {
-	session         *discordgo.Session
-	lavalink        *LavalinkManager
-	channelID       string
-	queue           []*PlayerQueueItem
-	activeSong      *PlayerQueueItem
-	isPlaying       bool
-	voiceConnection *discordgo.VoiceConnection
-	loopQueue       bool
-	loopSong        bool
-	skip            chan bool
-	replay          chan bool
+	session    *discordgo.Session
+	lavalink   *LavalinkManager
+	channelID  string
+	queue      []*PlayerQueueItem
+	activeSong *PlayerQueueItem
+	isPlaying  bool
+	loopQueue  bool
+	loopSong   bool
+	skip       chan bool
+	replay     chan bool
 }
 
 func New(session *discordgo.Session, voiceState *discordgo.VoiceState) (*MusicPlayer, error) {
@@ -30,22 +29,21 @@ func New(session *discordgo.Session, voiceState *discordgo.VoiceState) (*MusicPl
 		return nil, err
 	}
 
-	voiceConnection, err := session.ChannelVoiceJoin(voiceState.GuildID, voiceState.ChannelID, false, true)
+	err = session.ChannelVoiceJoinManual(voiceState.GuildID, voiceState.ChannelID, false, true)
 	if err != nil {
 		return nil, err
 	}
 
 	return &MusicPlayer{
-		session:         session,
-		lavalink:        lavalink,
-		channelID:       voiceState.ChannelID,
-		isPlaying:       false,
-		queue:           make([]*PlayerQueueItem, 0),
-		loopQueue:       false,
-		loopSong:        false,
-		skip:            make(chan bool),
-		replay:          make(chan bool),
-		voiceConnection: voiceConnection,
+		session:   session,
+		lavalink:  lavalink,
+		channelID: voiceState.ChannelID,
+		isPlaying: false,
+		queue:     make([]*PlayerQueueItem, 0),
+		loopQueue: false,
+		loopSong:  false,
+		skip:      make(chan bool),
+		replay:    make(chan bool),
 	}, nil
 }
 
@@ -159,13 +157,18 @@ func (p *MusicPlayer) RemoveSongFromQueue(item *PlayerQueueItem) {
 	p.queue = append(p.queue[:sIdx], p.queue[sIdx+1:]...)
 }
 
+func (p *MusicPlayer) GetTotalQueueTime() time.Duration {
+	var sum time.Duration = 0
+	for _, v := range p.Queue() {
+		sum += v.Duration
+	}
+	return sum
+}
+
 func (p *MusicPlayer) Exit() {
 	p.ClearQueue()
 	p.Skip()
-
-	if p.voiceConnection != nil {
-		p.voiceConnection.Disconnect()
-	}
+	p.lavalink.Player.Destroy()
 }
 
 func (p *MusicPlayer) playCurrentSong() error {

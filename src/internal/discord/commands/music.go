@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"ramiel/pkg/musicplayer"
+	"ramiel/internal/musicplayer"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -104,10 +104,7 @@ var MusicCommands = &CommandDefinition{
 					}
 
 					fields := make([]*discordgo.MessageEmbedField, 0)
-					durr := item.Duration.Round(time.Minute)
-					durr -= (durr / time.Hour) * time.Hour
-					durrMins := durr / time.Minute
-					durrSecs := durr / time.Second
+
 					fields = append(fields,
 						&discordgo.MessageEmbedField{
 							Name:   "Channel",
@@ -116,12 +113,12 @@ var MusicCommands = &CommandDefinition{
 						},
 						&discordgo.MessageEmbedField{
 							Name:   "Song Duration",
-							Value:  fmt.Sprintf("%02d:%02d", durrMins, durrSecs),
+							Value:  getTimeRemainingString(item.Duration),
 							Inline: true,
 						},
 						&discordgo.MessageEmbedField{
 							Name:   "Estimated time until playing",
-							Value:  fmt.Sprintf("%02d:%02d", durrMins, durrSecs),
+							Value:  getTimeRemainingString(musicPlayer[i.GuildID].GetTotalQueueTime() - item.Duration),
 							Inline: true,
 						},
 						&discordgo.MessageEmbedField{
@@ -237,4 +234,13 @@ func sendEmbedResponse(s *discordgo.Session, i *discordgo.InteractionCreate, mes
 			},
 		},
 	})
+}
+
+func getTimeRemainingString(durr time.Duration) string {
+	durr = durr.Round(time.Minute)
+	durr -= (durr / time.Hour) * time.Hour
+	durrMins := durr / time.Minute
+	durrSecs := durr / time.Second
+
+	return fmt.Sprintf("%02d:%02d", durrMins, durrSecs)
 }

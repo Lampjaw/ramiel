@@ -3,7 +3,7 @@ package discord
 import (
 	"fmt"
 
-	commands "ramiel/pkg/discord/commands"
+	commands "ramiel/internal/discord/commands"
 
 	"github.com/bwmarrin/discordgo"
 )

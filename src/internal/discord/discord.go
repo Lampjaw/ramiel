@@ -34,16 +34,16 @@ func (d *DiscordClient) Connect() error {
 
 	d.session.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {
 		log.Println("Discord connected...")
+
+		err = d.loadCommands()
+		if err != nil {
+			log.Println(err)
+		}
 	})
 
 	err = d.session.Open()
 	if err != nil {
 		return fmt.Errorf("Cannot open the session: %v", err)
-	}
-
-	err = d.loadCommands()
-	if err != nil {
-		return err
 	}
 
 	return nil
@@ -52,10 +52,12 @@ func (d *DiscordClient) Connect() error {
 func (d *DiscordClient) Close() error {
 	var err error
 	if d.config.RemoveCommands {
+		log.Println("Removing Commands...")
 		err = d.removeCommands()
 	}
 
 	if d.session != nil {
+		log.Println("Closing Session...")
 		sError := d.session.Close()
 		if sError != nil {
 			return sError
