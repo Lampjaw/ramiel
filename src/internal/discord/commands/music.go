@@ -3,6 +3,7 @@ package discord
 import (
 	"fmt"
 	"log"
+	"math"
 	"strings"
 	"time"
 
@@ -70,7 +71,7 @@ var MusicCommands = &CommandDefinition{
 			}
 
 			if musicPlayer[i.GuildID] != nil && musicPlayer[i.GuildID].GetChannelID() != voiceState.ChannelID {
-				musicPlayer[i.GuildID].Exit()
+				musicPlayer[i.GuildID].Close()
 				delete(musicPlayer, i.GuildID)
 			}
 
@@ -113,12 +114,12 @@ var MusicCommands = &CommandDefinition{
 						},
 						&discordgo.MessageEmbedField{
 							Name:   "Song Duration",
-							Value:  getTimeRemainingString(item.Duration),
+							Value:  getDurationString(item.Duration),
 							Inline: true,
 						},
 						&discordgo.MessageEmbedField{
 							Name:   "Estimated time until playing",
-							Value:  getTimeRemainingString(musicPlayer[i.GuildID].GetTotalQueueTime() - item.Duration),
+							Value:  getDurationString(musicPlayer[i.GuildID].GetTotalQueueTime() - item.Duration),
 							Inline: true,
 						},
 						&discordgo.MessageEmbedField{
@@ -135,7 +136,7 @@ var MusicCommands = &CommandDefinition{
 						Thumbnail: &discordgo.MessageEmbedThumbnail{
 							URL: item.ThumbnailURL,
 						},
-						Color:  0x070707,
+						Color:  0x0345fc,
 						Fields: fields,
 					}
 					sendEmbedResponse(s, i, embed)
@@ -143,11 +144,11 @@ var MusicCommands = &CommandDefinition{
 			}
 
 			go musicPlayer[i.GuildID].Play()
-
 		},
 		"stop": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			if musicPlayer[i.GuildID] == nil {
 				sendMessageResponse(s, i, "Not running in a channel!")
+				return
 			}
 
 			musicPlayer[i.GuildID].Stop()
@@ -157,6 +158,7 @@ var MusicCommands = &CommandDefinition{
 		"resume": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			if musicPlayer[i.GuildID] == nil {
 				sendMessageResponse(s, i, "Not running in a channel!")
+				return
 			}
 
 			musicPlayer[i.GuildID].Resume()
@@ -164,16 +166,24 @@ var MusicCommands = &CommandDefinition{
 			sendMessageResponse(s, i, "Resumed playing")
 		},
 		"queue": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
-			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-				Type: discordgo.InteractionResponseChannelMessageWithSource,
-				Data: &discordgo.InteractionResponseData{
-					Content: fmt.Sprintf("You entered %s!", i.Interaction.ApplicationCommandData().Name),
-				},
-			})
+			if musicPlayer[i.GuildID] == nil {
+				sendMessageResponse(s, i, "Not running in a channel!")
+				return
+			}
+
+			guild, _ := s.Guild(i.GuildID)
+
+			embed := &discordgo.MessageEmbed{
+				Title:       fmt.Sprintf("Queue for %s", guild.Name),
+				Description: getQueueListString(musicPlayer[i.GuildID]),
+				Color:       0x0345fc,
+			}
+			sendEmbedResponse(s, i, embed)
 		},
 		"shuffle": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			if musicPlayer[i.GuildID] == nil {
 				sendMessageResponse(s, i, "Not running in a channel!")
+				return
 			}
 
 			musicPlayer[i.GuildID].Shuffle()
@@ -183,6 +193,7 @@ var MusicCommands = &CommandDefinition{
 		"skip": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			if musicPlayer[i.GuildID] == nil {
 				sendMessageResponse(s, i, "Not running in a channel!")
+				return
 			}
 
 			musicPlayer[i.GuildID].Skip()
@@ -192,6 +203,7 @@ var MusicCommands = &CommandDefinition{
 		"clear": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			if musicPlayer[i.GuildID] == nil {
 				sendMessageResponse(s, i, "Not running in a channel!")
+				return
 			}
 
 			musicPlayer[i.GuildID].ClearQueue()
@@ -199,34 +211,76 @@ var MusicCommands = &CommandDefinition{
 			sendMessageResponse(s, i, "Cleared queue")
 		},
 		"nowplaying": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
-			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-				Type: discordgo.InteractionResponseChannelMessageWithSource,
-				Data: &discordgo.InteractionResponseData{
-					Content: fmt.Sprintf("You entered %s!", i.Interaction.ApplicationCommandData().Name),
+			if musicPlayer[i.GuildID] == nil {
+				sendMessageResponse(s, i, "Not running in a channel!")
+				return
+			}
+
+			np := musicPlayer[i.GuildID].Queue()[0]
+
+			seglength := np.Duration / 30
+			elapsed := musicPlayer[i.GuildID].TrackPosition()
+			seekPosition := int(math.Round(elapsed.Seconds() / seglength.Seconds()))
+
+			var b strings.Builder
+			b.WriteString("`")
+			for i := 0; i <= 30; i++ {
+				if i == seekPosition {
+					b.WriteString("🔘")
+				} else {
+					b.WriteString("▬")
+				}
+
+			}
+			b.WriteString("`")
+
+			fmt.Fprintf(&b, "\n\n%s / %s", getDurationString(elapsed), getDurationString(np.Duration))
+			fmt.Fprintf(&b, "\n\n`Requested by:` %s", np.RequestedBy)
+
+			embed := &discordgo.MessageEmbed{
+				Author: &discordgo.MessageEmbedAuthor{
+					Name: "Now Playing 🎵",
 				},
-			})
+				Title: np.Title,
+				URL:   np.Url,
+				Thumbnail: &discordgo.MessageEmbedThumbnail{
+					URL: np.ThumbnailURL,
+				},
+				Color:       0x0345fc,
+				Description: b.String(),
+			}
+			sendEmbedResponse(s, i, embed)
 		},
 		"disconnect": func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			if musicPlayer[i.GuildID] == nil {
 				sendMessageResponse(s, i, "Not running in a channel!")
+				return
 			}
 
-			musicPlayer[i.GuildID].Exit()
+			err := musicPlayer[i.GuildID].Close()
+			if err != nil {
+				log.Printf("Error when closing music player: %v", err)
+			}
+
+			delete(musicPlayer, i.GuildID)
 		},
 	},
 }
 
-func sendMessageResponse(s *discordgo.Session, i *discordgo.InteractionCreate, message string) error {
-	return s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+func sendMessageResponse(s *discordgo.Session, i *discordgo.InteractionCreate, message string) {
+	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Content: message,
 		},
 	})
+	if err != nil {
+		log.Printf("Failed to send response: %v", err)
+	}
 }
 
-func sendEmbedResponse(s *discordgo.Session, i *discordgo.InteractionCreate, message *discordgo.MessageEmbed) error {
-	return s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+func sendEmbedResponse(s *discordgo.Session, i *discordgo.InteractionCreate, message *discordgo.MessageEmbed) {
+	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Embeds: []*discordgo.MessageEmbed{
@@ -234,13 +288,61 @@ func sendEmbedResponse(s *discordgo.Session, i *discordgo.InteractionCreate, mes
 			},
 		},
 	})
+	if err != nil {
+		log.Printf("Failed to send response: %v", err)
+	}
 }
 
-func getTimeRemainingString(durr time.Duration) string {
-	durr = durr.Round(time.Minute)
-	durr -= (durr / time.Hour) * time.Hour
-	durrMins := durr / time.Minute
-	durrSecs := durr / time.Second
+func getDurationString(d time.Duration) string {
+	d = d.Round(time.Second)
+	d -= (d / time.Hour) * time.Hour
+	hours := d / time.Hour
+	d -= hours * time.Hour
+	mins := d / time.Minute
+	d -= mins * time.Minute
+	secs := d / time.Second
 
-	return fmt.Sprintf("%02d:%02d", durrMins, durrSecs)
+	var b strings.Builder
+	if hours > 0 {
+		fmt.Fprintf(&b, "%d:%02d", hours, mins)
+	} else {
+		fmt.Fprintf(&b, "%d", mins)
+	}
+	fmt.Fprintf(&b, ":%02d", secs)
+	return b.String()
+}
+
+func getQueueListString(p *musicplayer.MusicPlayer) string {
+	var b strings.Builder
+	active := p.NowPlaying()
+	queue := p.Queue()
+
+	if len(queue) == 0 {
+		return "Queue empty! Add some music!"
+	}
+
+	b.WriteString("__Now Playing:__\n")
+	fmt.Fprintf(&b, getQueueTrackString(active))
+	b.WriteString("\n")
+	b.WriteString("__Up Next:__\n")
+
+	if len(queue) > 1 {
+		cap := 10
+		if len(queue) < cap {
+			cap = len(queue)
+		}
+
+		for i, item := range queue[1:cap] {
+			fmt.Fprintf(&b, "`%d.` %s", i+1, getQueueTrackString(item))
+		}
+	}
+
+	queueDurationString := getDurationString(p.GetTotalQueueTime())
+	fmt.Fprintf(&b, "**%d songs in queue | %s total length**", len(queue), queueDurationString)
+
+	return b.String()
+}
+
+func getQueueTrackString(item *musicplayer.PlayerQueueItem) string {
+	return fmt.Sprintf("[%s](%s) | `%s Requested by: %s`\n\n", item.Title, item.Url, getDurationString(item.Duration), item.RequestedBy)
 }

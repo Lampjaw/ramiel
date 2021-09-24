@@ -2,6 +2,7 @@ package musicplayer
 
 import (
 	"fmt"
+	"log"
 	"math/rand"
 	"time"
 
@@ -61,7 +62,7 @@ func (p *MusicPlayer) AddPlaylistToQueue(member *discordgo.Member, url string) (
 		return nil, nil
 	}
 
-	requestedBy := fmt.Sprintf("%s (%s#%s)", member.Nick, member.User.Username, member.User.ID)
+	requestedBy := fmt.Sprintf("%s#%s", member.User.Username, member.User.Discriminator)
 	playlistInfo := newPlaylistInfo(requestedBy, playlist)
 
 	p.queue = append(p.queue, playlistInfo.Items...)
@@ -75,7 +76,7 @@ func (p *MusicPlayer) AddSongToQueue(member *discordgo.Member, url string) (*Pla
 		return nil, err
 	}
 
-	requestedBy := fmt.Sprintf("%s (%s#%s)", member.Nick, member.User.Username, member.User.ID)
+	requestedBy := fmt.Sprintf("%s#%s", member.User.Username, member.User.Discriminator)
 	queueItem := newPlayerQueueItem(requestedBy, video)
 
 	p.queue = append(p.queue, queueItem)
@@ -96,6 +97,9 @@ func (p *MusicPlayer) Play() error {
 		if err != nil {
 			break
 		}
+		if p.activeSong != nil {
+			p.postSongHandling(p.activeSong)
+		}
 	}
 
 	p.isPlaying = false
@@ -111,6 +115,10 @@ func (p *MusicPlayer) Resume() {
 	p.lavalink.Player.Pause(false)
 }
 
+func (p *MusicPlayer) TrackPosition() time.Duration {
+	return time.Duration(p.lavalink.Player.Position()) * time.Millisecond
+}
+
 func (p *MusicPlayer) Queue() []*PlayerQueueItem {
 	return p.queue
 }
@@ -121,6 +129,9 @@ func (p *MusicPlayer) Shuffle() {
 }
 
 func (p *MusicPlayer) ClearQueue() {
+	for j := 1; j < len(p.queue); j++ {
+		p.queue[j] = nil
+	}
 	p.queue = p.queue[:1]
 }
 
@@ -165,10 +176,8 @@ func (p *MusicPlayer) GetTotalQueueTime() time.Duration {
 	return sum
 }
 
-func (p *MusicPlayer) Exit() {
-	p.ClearQueue()
-	p.Skip()
-	p.lavalink.Player.Destroy()
+func (p *MusicPlayer) Close() error {
+	return p.lavalink.Close()
 }
 
 func (p *MusicPlayer) playCurrentSong() error {
@@ -183,10 +192,14 @@ func (p *MusicPlayer) playCurrentSong() error {
 
 	p.activeSong = p.queue[0]
 
+	log.Printf("Playing %s", p.activeSong.Title)
+
 	err := p.lavalink.Play(p.activeSong.Url)
 	if err != nil {
 		return err
 	}
+
+	log.Println("Play started")
 
 	for {
 		select {
@@ -194,6 +207,7 @@ func (p *MusicPlayer) playCurrentSong() error {
 			return nil
 		case <-p.skip:
 			p.loopSong = false
+			p.lavalink.Player.Stop()
 			return nil
 		case <-p.replay:
 			p.lavalink.Player.Seek(0)

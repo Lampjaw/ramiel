@@ -57,9 +57,11 @@ func (m *LavalinkManager) Play(query string) error {
 		return err
 	}
 
-	m.isTrackEnded <- false
-
 	return nil
+}
+
+func (m *LavalinkManager) Close() error {
+	return m.Player.Destroy()
 }
 
 func (m *LavalinkManager) voiceServerUpdate(s *discordgo.Session, event *discordgo.VoiceServerUpdate) error {
@@ -90,6 +92,8 @@ func (m *LavalinkManager) voiceServerUpdate(s *discordgo.Session, event *discord
 		return err
 	}
 
+	m.Player.Volume(50)
+
 	return nil
 }
 
@@ -99,6 +103,11 @@ type LavalinkEventHandler struct {
 }
 
 func (h *LavalinkEventHandler) OnTrackEnd(player *gavalink.Player, track string, reason string) error {
-	h.manager.isTrackEnded <- true
+	if reason == "FINISHED" {
+		go func() {
+			h.manager.isTrackEnded <- true
+		}()
+	}
+
 	return nil
 }

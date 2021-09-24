@@ -44,10 +44,16 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	defer discordClient.Close()
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, os.Kill)
 
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt, os.Kill)
-	<-stop
-	log.Println("Shutting down...")
+out:
+	for {
+		select {
+		case <-c:
+			log.Println("Shutting down...")
+			discordClient.Close()
+			break out
+		}
+	}
 }
