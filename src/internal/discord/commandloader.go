@@ -26,6 +26,10 @@ func init() {
 }
 
 func (d *DiscordClient) loadCommands() error {
+	for _, set := range commandsets {
+		set.BotCommandInitializer(d.session)
+	}
+
 	d.session.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		if h, ok := botCommandHandlers[i.ApplicationCommandData().Name]; ok {
 			h(s, i)

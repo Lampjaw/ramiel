@@ -30,10 +30,6 @@ func NewLavalinkManager(lavallinkEndpoint string, lavalinkPassword string, disco
 		isTrackEnded: make(chan bool),
 	}
 
-	discordSession.AddHandler(func(s *discordgo.Session, event *discordgo.VoiceServerUpdate) {
-		m.voiceServerUpdate(s, event)
-	})
-
 	return m, nil
 }
 
@@ -64,7 +60,7 @@ func (m *LavalinkManager) Close() error {
 	return m.Player.Destroy()
 }
 
-func (m *LavalinkManager) voiceServerUpdate(s *discordgo.Session, event *discordgo.VoiceServerUpdate) error {
+func (m *LavalinkManager) VoiceServerUpdate(s *discordgo.Session, event *discordgo.VoiceServerUpdate) error {
 	vsu := gavalink.VoiceServerUpdate{
 		Endpoint: event.Endpoint,
 		GuildID:  event.GuildID,
@@ -92,7 +88,7 @@ func (m *LavalinkManager) voiceServerUpdate(s *discordgo.Session, event *discord
 		return err
 	}
 
-	m.Player.Volume(50)
+	m.Player.Volume(75)
 
 	return nil
 }

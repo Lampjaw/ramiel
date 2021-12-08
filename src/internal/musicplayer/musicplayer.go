@@ -19,9 +19,7 @@ type MusicPlayer struct {
 	activeSong *PlayerQueueItem
 	isPlaying  bool
 	loopQueue  bool
-	loopSong   bool
 	skip       chan bool
-	replay     chan bool
 }
 
 func New(session *discordgo.Session, voiceState *discordgo.VoiceState) (*MusicPlayer, error) {
@@ -42,10 +40,12 @@ func New(session *discordgo.Session, voiceState *discordgo.VoiceState) (*MusicPl
 		isPlaying: false,
 		queue:     make([]*PlayerQueueItem, 0),
 		loopQueue: false,
-		loopSong:  false,
 		skip:      make(chan bool),
-		replay:    make(chan bool),
 	}, nil
+}
+
+func (p *MusicPlayer) VoiceServerUpdate(s *discordgo.Session, event *discordgo.VoiceServerUpdate) error {
+	return p.lavalink.VoiceServerUpdate(s, event)
 }
 
 func (p *MusicPlayer) GetChannelID() string {
@@ -115,6 +115,14 @@ func (p *MusicPlayer) Resume() {
 	p.lavalink.Player.Pause(false)
 }
 
+func (p *MusicPlayer) LoopQueue() {
+	p.loopQueue = !p.loopQueue
+}
+
+func (p *MusicPlayer) LoopQueueState() bool {
+	return p.loopQueue
+}
+
 func (p *MusicPlayer) TrackPosition() time.Duration {
 	return time.Duration(p.lavalink.Player.Position()) * time.Millisecond
 }
@@ -153,10 +161,6 @@ func (p *MusicPlayer) NowPlaying() *PlayerQueueItem {
 
 func (p *MusicPlayer) Skip() {
 	p.skip <- true
-}
-
-func (p *MusicPlayer) Replay() {
-	p.replay <- true
 }
 
 func (p *MusicPlayer) RemoveSongFromQueue(item *PlayerQueueItem) {
@@ -206,11 +210,8 @@ func (p *MusicPlayer) playCurrentSong() error {
 		case <-p.lavalink.isTrackEnded:
 			return nil
 		case <-p.skip:
-			p.loopSong = false
 			p.lavalink.Player.Stop()
 			return nil
-		case <-p.replay:
-			p.lavalink.Player.Seek(0)
 		}
 	}
 }
@@ -222,10 +223,7 @@ func (p *MusicPlayer) postSongHandling(item *PlayerQueueItem) {
 		sIdx := p.findSongIndex(item.VideoID)
 		p.queue = append(p.queue[:sIdx], p.queue[sIdx+1:]...)
 		p.queue = append(p.queue, item)
-		return
-	}
-
-	if !p.loopSong {
+	} else {
 		p.RemoveSongFromQueue(item)
 	}
 }
