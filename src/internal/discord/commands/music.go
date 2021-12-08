@@ -1,7 +1,6 @@
 package discord
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"math"
@@ -18,21 +17,14 @@ var guildMusicPlayers = map[string]*musicplayer.MusicPlayer{}
 var MusicCommands = &CommandDefinition{
 	BotCommandInitializer: func(s *discordgo.Session) {
 		s.AddHandler(func(s *discordgo.Session, event *discordgo.VoiceStateUpdate) {
-			log.Printf("Voice State Update")
-			r, _ := json.Marshal(event)
-			log.Print(string(r))
-
 			if guildMusicPlayers[event.GuildID] != nil && event.ChannelID == "" {
-				guildMusicPlayers[event.GuildID].Close()
-				delete(guildMusicPlayers, event.GuildID)
+				if err := disconnectPlayer(s, event.GuildID); err != nil {
+					log.Printf("Error when disconnecting: %v", err)
+				}
 			}
 		})
 
 		s.AddHandler(func(s *discordgo.Session, event *discordgo.VoiceServerUpdate) {
-			log.Printf("Voice Server Update")
-			r, _ := json.Marshal(event)
-			log.Print(string(r))
-
 			if guildMusicPlayers[event.GuildID] != nil {
 				guildMusicPlayers[event.GuildID].VoiceServerUpdate(s, event)
 			}
@@ -91,13 +83,11 @@ var MusicCommands = &CommandDefinition{
 					Name:        "nowplaying",
 					Description: "See information on playing item",
 				},
-				/*
-					{
-						Type:        discordgo.ApplicationCommandOptionSubCommand,
-						Name:        "disconnect",
-						Description: "Disconnect from the voice channel",
-					},
-				*/
+				{
+					Type:        discordgo.ApplicationCommandOptionSubCommand,
+					Name:        "disconnect",
+					Description: "Disconnect from the voice channel",
+				},
 				{
 					Type:        discordgo.ApplicationCommandOptionSubCommand,
 					Name:        "loop",
@@ -259,13 +249,12 @@ var MusicCommands = &CommandDefinition{
 
 				sendMessageResponse(s, i, "Duplicates removed")
 			case "disconnect":
-				err := musicPlayer.Close()
-				if err != nil {
-					log.Printf("Error when closing music player: %v", err)
+				if err := disconnectPlayer(s, i.GuildID); err != nil {
+					log.Printf("Error when disconnecting: %v", err)
+					sendMessageResponse(s, i, "Unable to disconnect player. Try disconnecting manually.")
+				} else {
+					sendMessageResponse(s, i, "See ya!")
 				}
-				delete(guildMusicPlayers, i.GuildID)
-
-				sendMessageResponse(s, i, "See ya!")
 			}
 		},
 	},
@@ -296,6 +285,21 @@ func getMusicPlayerInstance(s *discordgo.Session, i *discordgo.InteractionCreate
 	}
 
 	return guildMusicPlayers[i.GuildID], nil
+}
+
+func disconnectPlayer(s *discordgo.Session, guildID string) error {
+	if guildMusicPlayers[guildID] != nil {
+		if err := guildMusicPlayers[guildID].Close(); err != nil {
+			return fmt.Errorf("Error destroying player for %s: %s", guildID, err)
+		}
+		delete(guildMusicPlayers, guildID)
+	}
+
+	if err := s.ChannelVoiceJoinManual(guildID, "", false, true); err != nil {
+		return fmt.Errorf("Failed to leave voice channel for %s: %s", guildID, err)
+	}
+
+	return nil
 }
 
 func sendMessageResponse(s *discordgo.Session, i *discordgo.InteractionCreate, message string) {
