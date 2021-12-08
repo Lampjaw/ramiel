@@ -37,7 +37,7 @@ func (d *DiscordClient) loadCommands() error {
 	})
 
 	for _, command := range botCommands {
-		_, err := d.session.ApplicationCommandCreate(d.session.State.User.ID, *&d.config.GuildID, command)
+		_, err := d.session.ApplicationCommandCreate(d.session.State.User.ID, "", command)
 		if err != nil {
 			return fmt.Errorf("Cannot create '%v' command: %v", command.Name, err)
 		}
@@ -53,7 +53,7 @@ func (d *DiscordClient) removeCommands() error {
 	}
 
 	for _, command := range cmds {
-		err := d.session.ApplicationCommandDelete(d.session.State.User.ID, *&d.config.GuildID, command.ID)
+		err := d.session.ApplicationCommandDelete(d.session.State.User.ID, "", command.ID)
 		if err != nil {
 			return fmt.Errorf("Cannot delete '%v' command: %v", command.Name, err)
 		}
