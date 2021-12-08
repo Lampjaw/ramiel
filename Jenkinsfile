@@ -2,5 +2,6 @@
 golangDocker([
   dockerRepository: 'hvraverse/ramiel',
   dockerServiceName: 'ramiel',
-  releaseRepository: 'hvraverse/verseconfig'
+  releaseRepository: 'hvraverse/verseconfig',
+  credName: 'GithubSSHverseconfig'
   ])
