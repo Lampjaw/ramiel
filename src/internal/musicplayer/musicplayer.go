@@ -3,7 +3,6 @@ package musicplayer
 import (
 	"fmt"
 	"log"
-	"math/rand"
 	"time"
 
 	"ramiel/internal/youtube"
@@ -12,14 +11,12 @@ import (
 )
 
 type MusicPlayer struct {
-	session    *discordgo.Session
-	lavalink   *LavalinkManager
-	channelID  string
-	queue      []*PlayerQueueItem
-	activeSong *PlayerQueueItem
-	isPlaying  bool
-	loopQueue  bool
-	skip       chan bool
+	session   *discordgo.Session
+	lavalink  *LavalinkManager
+	channelID string
+	queue     *MusicPlayerQueue
+	isPlaying bool
+	skip      chan bool
 }
 
 func New(session *discordgo.Session, voiceState *discordgo.VoiceState) (*MusicPlayer, error) {
@@ -38,8 +35,7 @@ func New(session *discordgo.Session, voiceState *discordgo.VoiceState) (*MusicPl
 		lavalink:  lavalink,
 		channelID: voiceState.ChannelID,
 		isPlaying: false,
-		queue:     make([]*PlayerQueueItem, 0),
-		loopQueue: false,
+		queue:     NewMusicPlayerQueue(),
 		skip:      make(chan bool),
 	}, nil
 }
@@ -65,7 +61,7 @@ func (p *MusicPlayer) AddPlaylistToQueue(member *discordgo.Member, url string) (
 	requestedBy := fmt.Sprintf("%s#%s", member.User.Username, member.User.Discriminator)
 	playlistInfo := newPlaylistInfo(requestedBy, playlist)
 
-	p.queue = append(p.queue, playlistInfo.Items...)
+	p.queue.AddItems(playlistInfo.Items)
 
 	return playlistInfo, nil
 }
@@ -79,32 +75,31 @@ func (p *MusicPlayer) AddSongToQueue(member *discordgo.Member, url string) (*Pla
 	requestedBy := fmt.Sprintf("%s#%s", member.User.Username, member.User.Discriminator)
 	queueItem := newPlayerQueueItem(requestedBy, video)
 
-	p.queue = append(p.queue, queueItem)
+	p.queue.AddItem(queueItem)
 
 	return queueItem, nil
 }
 
-func (p *MusicPlayer) Play() error {
+func (p *MusicPlayer) Play() {
 	if p.isPlaying {
-		return nil
+		return
 	}
 
 	p.isPlaying = true
 
-	var err error
-	for len(p.queue) > 0 && p.isPlaying {
-		err = p.playCurrentSong()
-		if err != nil {
-			break
+	for {
+		item := p.queue.ActiveItem()
+
+		if err := p.playItem(item); err != nil {
+			log.Printf("Failed to play item: %s: %s", item.Url, err)
 		}
-		if p.activeSong != nil {
-			p.postSongHandling(p.activeSong)
+
+		if p.queue.NextItem() == nil {
+			break
 		}
 	}
 
 	p.isPlaying = false
-
-	return err
 }
 
 func (p *MusicPlayer) Stop() {
@@ -115,12 +110,12 @@ func (p *MusicPlayer) Resume() {
 	p.lavalink.Player.Pause(false)
 }
 
-func (p *MusicPlayer) LoopQueue() {
-	p.loopQueue = !p.loopQueue
+func (p *MusicPlayer) ToggleLoopingState(s LoopState) bool {
+	return p.queue.ToggleLoopingState(s)
 }
 
-func (p *MusicPlayer) LoopQueueState() bool {
-	return p.loopQueue
+func (p *MusicPlayer) QueueLoopState() LoopState {
+	return p.queue.LoopState()
 }
 
 func (p *MusicPlayer) TrackPosition() time.Duration {
@@ -128,82 +123,56 @@ func (p *MusicPlayer) TrackPosition() time.Duration {
 }
 
 func (p *MusicPlayer) Queue() []*PlayerQueueItem {
-	return p.queue
+	return p.queue.Queue()
 }
 
 func (p *MusicPlayer) Shuffle() {
-	rand.Seed(time.Now().UnixNano())
-	rand.Shuffle(len(p.queue), func(i, j int) { p.queue[i], p.queue[j] = p.queue[j], p.queue[i] })
+	p.queue.Shuffle()
 }
 
 func (p *MusicPlayer) ClearQueue() {
-	for j := 1; j < len(p.queue); j++ {
-		p.queue[j] = nil
-	}
-	p.queue = p.queue[:1]
+	p.queue.Clear()
 }
 
 func (p *MusicPlayer) RemoveDuplicates() {
-	keys := make(map[string]bool)
-	list := make([]*PlayerQueueItem, 0)
-	for _, entry := range p.queue {
-		if _, value := keys[entry.VideoID]; !value {
-			keys[entry.VideoID] = true
-			list = append(list, entry)
-		}
-	}
-	p.queue = list
+	p.queue.RemoveDuplicates()
 }
 
 func (p *MusicPlayer) NowPlaying() *PlayerQueueItem {
-	return p.activeSong
+	return p.queue.ActiveItem()
 }
 
 func (p *MusicPlayer) Skip() {
+	if p.queue.LoopState() == ItemLooping {
+		p.queue.ToggleLoopingState(LoopingDisabled)
+	}
+
 	p.skip <- true
 }
 
-func (p *MusicPlayer) RemoveSongFromQueue(item *PlayerQueueItem) {
-	if len(p.queue) == 0 {
-		return
-	}
-
-	sIdx := p.findSongIndex(item.VideoID)
-	p.queue = append(p.queue[:sIdx], p.queue[sIdx+1:]...)
-}
-
 func (p *MusicPlayer) GetTotalQueueTime() time.Duration {
-	var sum time.Duration = 0
-	for _, v := range p.Queue() {
-		sum += v.Duration
-	}
-	return sum
+	return p.queue.QueueDuration()
 }
 
 func (p *MusicPlayer) Close() error {
 	return p.lavalink.Close()
 }
 
-func (p *MusicPlayer) playCurrentSong() error {
-	if p.queue[0].Video == nil {
-		video, err := youtube.ResolveVideoData(p.queue[0].Url)
+func (p *MusicPlayer) playItem(item *PlayerQueueItem) error {
+	if item.Video == nil {
+		video, err := youtube.ResolveVideoData(item.Url)
 		if err != nil {
 			return err
 		}
 
-		p.queue[0] = newPlayerQueueItem(p.queue[0].RequestedBy, video)
+		item.Video = video
+		item.ThumbnailURL = video.Thumbnails[0].URL
 	}
 
-	p.activeSong = p.queue[0]
-
-	log.Printf("Playing %s", p.activeSong.Title)
-
-	err := p.lavalink.Play(p.activeSong.Url)
+	err := p.lavalink.Play(item.Url)
 	if err != nil {
 		return err
 	}
-
-	log.Println("Play started")
 
 	for {
 		select {
@@ -214,25 +183,4 @@ func (p *MusicPlayer) playCurrentSong() error {
 			return nil
 		}
 	}
-}
-
-func (p *MusicPlayer) postSongHandling(item *PlayerQueueItem) {
-	p.activeSong = nil
-
-	if p.loopQueue {
-		sIdx := p.findSongIndex(item.VideoID)
-		p.queue = append(p.queue[:sIdx], p.queue[sIdx+1:]...)
-		p.queue = append(p.queue, item)
-	} else {
-		p.RemoveSongFromQueue(item)
-	}
-}
-
-func (p *MusicPlayer) findSongIndex(videoID string) int {
-	for i := range p.queue {
-		if p.queue[i].VideoID == videoID {
-			return i
-		}
-	}
-	return -1
 }

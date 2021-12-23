@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"ramiel/internal/discordutils"
 	"ramiel/internal/musicplayer"
 
 	"github.com/bwmarrin/discordgo"
@@ -17,7 +18,7 @@ var guildMusicPlayers = map[string]*musicplayer.MusicPlayer{}
 var MusicCommands = &CommandDefinition{
 	BotCommandInitializer: func(s *discordgo.Session) {
 		s.AddHandler(func(s *discordgo.Session, event *discordgo.VoiceStateUpdate) {
-			if guildMusicPlayers[event.GuildID] != nil && event.ChannelID == "" {
+			if discordutils.IsBotUser(s, event.UserID) && guildMusicPlayers[event.GuildID] != nil && event.ChannelID == "" {
 				if err := disconnectPlayer(s, event.GuildID); err != nil {
 					log.Printf("Error when disconnecting: %v", err)
 				}
@@ -235,10 +236,10 @@ var MusicCommands = &CommandDefinition{
 				}
 				sendEmbedResponse(s, i, embed)
 			case "loop":
-				musicPlayer.LoopQueue()
+				isEnabled := musicPlayer.ToggleLoopingState(musicplayer.QueueLooping)
 
 				loopState := ""
-				if musicPlayer.LoopQueueState() {
+				if isEnabled {
 					loopState = "enabled"
 				} else {
 					loopState = "disabled"
@@ -295,36 +296,22 @@ func disconnectPlayer(s *discordgo.Session, guildID string) error {
 		delete(guildMusicPlayers, guildID)
 	}
 
-	if err := s.ChannelVoiceJoinManual(guildID, "", false, true); err != nil {
-		return fmt.Errorf("Failed to leave voice channel for %s: %s", guildID, err)
+	if err := discordutils.LeaveVoiceChannel(s, guildID); err != nil {
+		return err
 	}
 
 	return nil
 }
 
 func sendMessageResponse(s *discordgo.Session, i *discordgo.InteractionCreate, message string) {
-	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Content: message,
-		},
-	})
-	if err != nil {
-		log.Printf("Failed to send response: %v", err)
+	if err := discordutils.SendMessageResponse(s, i.Interaction, message); err != nil {
+		log.Println(err)
 	}
 }
 
 func sendEmbedResponse(s *discordgo.Session, i *discordgo.InteractionCreate, message *discordgo.MessageEmbed) {
-	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Embeds: []*discordgo.MessageEmbed{
-				message,
-			},
-		},
-	})
-	if err != nil {
-		log.Printf("Failed to send response: %v", err)
+	if err := discordutils.SendEmbedResponse(s, i.Interaction, message); err != nil {
+		log.Println(err)
 	}
 }
 
@@ -374,7 +361,7 @@ func getQueueListString(p *musicplayer.MusicPlayer) string {
 	}
 
 	loopQueueState := ""
-	if p.LoopQueueState() {
+	if p.QueueLoopState() == musicplayer.QueueLooping {
 		loopQueueState = " | 🔁 Enabled"
 	}
 
