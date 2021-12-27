@@ -56,7 +56,7 @@ func (m *LavalinkManager) Play(query string) error {
 	return nil
 }
 
-func (m *LavalinkManager) Close() error {
+func (m *LavalinkManager) Destroy() error {
 	return m.Player.Destroy()
 }
 
@@ -88,7 +88,7 @@ func (m *LavalinkManager) VoiceServerUpdate(s *discordgo.Session, event *discord
 		return err
 	}
 
-	m.Player.Volume(75)
+	m.Player.Volume(50)
 
 	return nil
 }

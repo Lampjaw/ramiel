@@ -11,41 +11,31 @@ import (
 )
 
 type MusicPlayer struct {
-	session   *discordgo.Session
 	lavalink  *LavalinkManager
-	channelID string
 	queue     *MusicPlayerQueue
 	isPlaying bool
 	skip      chan bool
+	Errors    chan error
 }
 
-func New(session *discordgo.Session, voiceState *discordgo.VoiceState) (*MusicPlayer, error) {
+func NewMusicPlayer(session *discordgo.Session) (*MusicPlayer, error) {
+
 	lavalink, err := NewLavalinkManager("lavalink:2333", "youshallnotpass", session)
 	if err != nil {
 		return nil, err
 	}
 
-	err = session.ChannelVoiceJoinManual(voiceState.GuildID, voiceState.ChannelID, false, true)
-	if err != nil {
-		return nil, err
-	}
-
 	return &MusicPlayer{
-		session:   session,
 		lavalink:  lavalink,
-		channelID: voiceState.ChannelID,
 		isPlaying: false,
 		queue:     NewMusicPlayerQueue(),
 		skip:      make(chan bool),
+		Errors:    make(chan error),
 	}, nil
 }
 
 func (p *MusicPlayer) VoiceServerUpdate(s *discordgo.Session, event *discordgo.VoiceServerUpdate) error {
 	return p.lavalink.VoiceServerUpdate(s, event)
-}
-
-func (p *MusicPlayer) GetChannelID() string {
-	return p.channelID
 }
 
 func (p *MusicPlayer) AddPlaylistToQueue(member *discordgo.Member, url string) (*PlaylistInfo, error) {
@@ -91,6 +81,7 @@ func (p *MusicPlayer) Play() {
 		item := p.queue.ActiveItem()
 
 		if err := p.playItem(item); err != nil {
+			p.Errors <- err
 			log.Printf("Failed to play item: %s: %s", item.Url, err)
 		}
 
@@ -154,11 +145,18 @@ func (p *MusicPlayer) GetTotalQueueTime() time.Duration {
 	return p.queue.QueueDuration()
 }
 
-func (p *MusicPlayer) Close() error {
-	return p.lavalink.Close()
+func (p *MusicPlayer) Destroy() error {
+	return p.lavalink.Destroy()
 }
 
-func (p *MusicPlayer) playItem(item *PlayerQueueItem) error {
+func (p *MusicPlayer) playItem(item *PlayerQueueItem) (resErr error) {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("Panic occured: %v", err)
+			resErr = fmt.Errorf("Error occured playing track `%s`", item.Title)
+		}
+	}()
+
 	if item.Video == nil {
 		video, err := youtube.ResolveVideoData(item.Url)
 		if err != nil {

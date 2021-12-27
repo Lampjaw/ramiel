@@ -6,6 +6,11 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
+func GetInteractionUserVoiceChannelID(s *discordgo.Session, i *discordgo.Interaction) string {
+	voiceState, _ := s.State.VoiceState(i.GuildID, i.Member.User.ID)
+	return voiceState.ChannelID
+}
+
 func IsBotUser(s *discordgo.Session, userID string) bool {
 	return s.State.User.ID == userID
 }
@@ -13,6 +18,22 @@ func IsBotUser(s *discordgo.Session, userID string) bool {
 func LeaveVoiceChannel(s *discordgo.Session, guildID string) error {
 	if err := s.ChannelVoiceJoinManual(guildID, "", false, true); err != nil {
 		return fmt.Errorf("Failed to leave voice channel for %s: %s", guildID, err)
+	}
+
+	return nil
+}
+
+func SendMessage(s *discordgo.Session, channelID string, message string) error {
+	if _, err := s.ChannelMessageSend(channelID, message); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func SendMessageEmbed(s *discordgo.Session, channelID string, message *discordgo.MessageEmbed) error {
+	if _, err := s.ChannelMessageSendEmbed(channelID, message); err != nil {
+		return err
 	}
 
 	return nil
