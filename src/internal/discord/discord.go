@@ -53,7 +53,7 @@ func (d *DiscordClient) Close() error {
 	var err error
 	if d.config.RemoveCommands {
 		log.Println("Removing Commands...")
-		err = d.removeCommands()
+		//err = d.removeCommands()
 	}
 
 	if d.session != nil {

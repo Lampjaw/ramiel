@@ -1,4 +1,4 @@
-FROM golang:1.16-alpine AS build-env
+FROM golang:1.18-alpine AS build-env
 
 RUN apk add -U --no-cache build-base git
 

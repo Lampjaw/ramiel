@@ -4,9 +4,8 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"syscall"
-
 	"ramiel/internal/discord"
+	"syscall"
 
 	"github.com/namsral/flag"
 )
@@ -46,7 +45,7 @@ func main() {
 	}
 
 	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, os.Kill, syscall.SIGTERM, syscall.SIGKILL)
+	signal.Notify(c, os.Interrupt, os.Kill, syscall.SIGTERM, syscall.SIGKILL, syscall.SIGINT)
 
 out:
 	for {

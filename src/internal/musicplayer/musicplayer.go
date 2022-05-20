@@ -1,184 +1,232 @@
 package musicplayer
 
 import (
-	"fmt"
-	"log"
+	"context"
+	"ramiel/internal/discordutils"
 	"time"
 
-	"ramiel/internal/youtube"
-
 	"github.com/bwmarrin/discordgo"
+	"github.com/disgoorg/disgolink/lavalink"
 )
 
 type MusicPlayer struct {
-	lavalink  *LavalinkManager
-	queue     *MusicPlayerQueue
-	isPlaying bool
-	skip      chan bool
-	Errors    chan error
+	discordSession  *discordgo.Session
+	lavalinkManager *LavalinkManager
+	PlayerManagers  map[string]*PlayerManager
 }
 
-func NewMusicPlayer(session *discordgo.Session) (*MusicPlayer, error) {
-
-	lavalink, err := NewLavalinkManager("lavalink:2333", "youshallnotpass", session)
-	if err != nil {
-		return nil, err
-	}
-
+func NewMusicPlayer(session *discordgo.Session) *MusicPlayer {
 	return &MusicPlayer{
-		lavalink:  lavalink,
-		isPlaying: false,
-		queue:     NewMusicPlayerQueue(),
-		skip:      make(chan bool),
-		Errors:    make(chan error),
-	}, nil
-}
-
-func (p *MusicPlayer) VoiceServerUpdate(s *discordgo.Session, event *discordgo.VoiceServerUpdate) error {
-	return p.lavalink.VoiceServerUpdate(s, event)
-}
-
-func (p *MusicPlayer) AddPlaylistToQueue(member *discordgo.Member, url string) (*PlaylistInfo, error) {
-	playlist, err := youtube.ResolvePlaylistData(url)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to get playlist info: %v", err)
+		discordSession:  session,
+		lavalinkManager: NewLavalinkManager("lavalink", "2333", "youshallnotpass", session),
+		PlayerManagers:  map[string]*PlayerManager{},
 	}
-
-	if playlist == nil {
-		return nil, nil
-	}
-
-	requestedBy := fmt.Sprintf("%s#%s", member.User.Username, member.User.Discriminator)
-	playlistInfo := newPlaylistInfo(requestedBy, playlist)
-
-	p.queue.AddItems(playlistInfo.Items)
-
-	return playlistInfo, nil
 }
 
-func (p *MusicPlayer) AddSongToQueue(member *discordgo.Member, url string) (*PlayerQueueItem, error) {
-	video, err := youtube.ResolveVideoData(url)
-	if err != nil {
-		return nil, err
-	}
-
-	requestedBy := fmt.Sprintf("%s#%s", member.User.Username, member.User.Discriminator)
-	queueItem := newPlayerQueueItem(requestedBy, video)
-
-	p.queue.AddItem(queueItem)
-
-	return queueItem, nil
+func (p *MusicPlayer) PlayerExists(guildID string) bool {
+	_, exists := p.PlayerManagers[guildID]
+	return exists
 }
 
-func (p *MusicPlayer) Play() {
-	if p.isPlaying {
+func (p *MusicPlayer) PlayQuery(guildID string, voiceChannelID string, channelID string, requestedBy string, query string) {
+	p.lavalinkManager.Link.BestRestClient().LoadItemHandler(context.TODO(), query, lavalink.NewResultHandler(
+		func(track lavalink.AudioTrack) {
+			track.SetUserData(requestedBy)
+			p.play(guildID, voiceChannelID, channelID, track)
+		},
+		func(playlist lavalink.AudioPlaylist) {
+			for _, t := range playlist.Tracks() {
+				t.SetUserData(requestedBy)
+			}
+
+			p.play(guildID, voiceChannelID, channelID, playlist.Tracks()...)
+		},
+		func(tracks []lavalink.AudioTrack) {
+			for _, t := range tracks {
+				t.SetUserData(requestedBy)
+			}
+
+			p.play(guildID, voiceChannelID, channelID, tracks[0])
+		},
+		func() {
+			_, _ = p.discordSession.ChannelMessageSend(channelID, "no matches found for: "+query)
+		},
+		func(ex lavalink.FriendlyException) {
+			_, _ = p.discordSession.ChannelMessageSend(channelID, "error while loading track: "+ex.Message)
+		},
+	))
+}
+
+func (p *MusicPlayer) play(guildID string, voiceChannelID string, channelID string, tracks ...lavalink.AudioTrack) {
+	if err := p.discordSession.ChannelVoiceJoinManual(guildID, voiceChannelID, false, false); err != nil {
+		_, _ = p.discordSession.ChannelMessageSend(channelID, "error while joining voice channel: "+err.Error())
 		return
 	}
 
-	p.isPlaying = true
-
-	for {
-		item := p.queue.ActiveItem()
-
-		if err := p.playItem(item); err != nil {
-			p.Errors <- err
-			log.Printf("Failed to play item: %s: %s", item.Url, err)
-		}
-
-		if p.queue.NextItem() == nil {
-			break
-		}
+	manager, ok := p.PlayerManagers[guildID]
+	if !ok {
+		manager = NewPlayerManager(p.lavalinkManager.Link, guildID)
+		p.PlayerManagers[guildID] = manager
 	}
 
-	p.isPlaying = false
-}
+	manager.AddQueue(tracks...)
 
-func (p *MusicPlayer) Stop() {
-	p.lavalink.Player.Pause(true)
-}
-
-func (p *MusicPlayer) Resume() {
-	p.lavalink.Player.Pause(false)
-}
-
-func (p *MusicPlayer) ToggleLoopingState(s LoopState) bool {
-	return p.queue.ToggleLoopingState(s)
-}
-
-func (p *MusicPlayer) QueueLoopState() LoopState {
-	return p.queue.LoopState()
-}
-
-func (p *MusicPlayer) TrackPosition() time.Duration {
-	return time.Duration(p.lavalink.Player.Position()) * time.Millisecond
-}
-
-func (p *MusicPlayer) Queue() []*PlayerQueueItem {
-	return p.queue.Queue()
-}
-
-func (p *MusicPlayer) Shuffle() {
-	p.queue.Shuffle()
-}
-
-func (p *MusicPlayer) ClearQueue() {
-	p.queue.Clear()
-}
-
-func (p *MusicPlayer) RemoveDuplicates() {
-	p.queue.RemoveDuplicates()
-}
-
-func (p *MusicPlayer) NowPlaying() *PlayerQueueItem {
-	return p.queue.ActiveItem()
-}
-
-func (p *MusicPlayer) Skip() {
-	if p.queue.LoopState() == ItemLooping {
-		p.queue.ToggleLoopingState(LoopingDisabled)
+	if manager.Player.PlayingTrack() != nil {
+		return
 	}
 
-	p.skip <- true
+	p.nextTrack(guildID, channelID)
 }
 
-func (p *MusicPlayer) GetTotalQueueTime() time.Duration {
-	return p.queue.QueueDuration()
-}
+func (p *MusicPlayer) nextTrack(guildID string, channelID string) {
+	manager, ok := p.PlayerManagers[guildID]
+	if !ok {
+		manager = NewPlayerManager(p.lavalinkManager.Link, guildID)
+		p.PlayerManagers[guildID] = manager
+	}
 
-func (p *MusicPlayer) Destroy() error {
-	return p.lavalink.Destroy()
-}
-
-func (p *MusicPlayer) playItem(item *PlayerQueueItem) (resErr error) {
-	defer func() {
-		if err := recover(); err != nil {
-			log.Printf("Panic occured: %v", err)
-			resErr = fmt.Errorf("Error occured playing track `%s`", item.Title)
+	if len(manager.Queue) == 0 {
+		if err := manager.Player.Stop(); err != nil {
+			_, _ = p.discordSession.ChannelMessageSend(channelID, "error while stopping track: "+err.Error())
 		}
-	}()
-
-	if item.Video == nil {
-		video, err := youtube.ResolveVideoData(item.Url)
-		if err != nil {
-			return err
-		}
-
-		item.Video = video
-		item.ThumbnailURL = video.Thumbnails[0].URL
+		return
 	}
 
-	err := p.lavalink.Play(item.Url)
-	if err != nil {
-		return err
+	track := manager.PopQueue()
+
+	if err := manager.Player.Play(track); err != nil {
+		_, _ = p.discordSession.ChannelMessageSend(channelID, "error while playing track: "+err.Error())
+		return
+	}
+}
+
+func (p *MusicPlayer) Stop(guildID string) {
+	manager, ok := p.PlayerManagers[guildID]
+	if !ok {
+		return
 	}
 
-	for {
-		select {
-		case <-p.lavalink.isTrackEnded:
-			return nil
-		case <-p.skip:
-			p.lavalink.Player.Stop()
-			return nil
-		}
+	manager.Player.Pause(true)
+}
+
+func (p *MusicPlayer) Resume(guildID string) {
+	manager, ok := p.PlayerManagers[guildID]
+	if !ok {
+		return
 	}
+
+	manager.Player.Pause(false)
+}
+
+func (p *MusicPlayer) TrackPosition(guildID string) time.Duration {
+	manager, ok := p.PlayerManagers[guildID]
+	if !ok {
+		return 0
+	}
+
+	return time.Duration(manager.Player.Position()) * time.Millisecond
+}
+
+func (p *MusicPlayer) ToggleLoopingState(guildID string) {
+	manager, ok := p.PlayerManagers[guildID]
+	if !ok {
+		return
+	}
+
+	if manager.RepeatingMode == RepeatingModeOff {
+		manager.RepeatingMode = RepeatingModeSong
+	} else {
+		manager.RepeatingMode = RepeatingModeOff
+	}
+}
+
+func (p *MusicPlayer) QueueLoopState(guildID string) RepeatingMode {
+	manager, ok := p.PlayerManagers[guildID]
+	if !ok {
+		return -1
+	}
+
+	return manager.RepeatingMode
+}
+
+func (p *MusicPlayer) Shuffle(guildID string) {
+	manager, ok := p.PlayerManagers[guildID]
+	if !ok {
+		return
+	}
+
+	manager.Shuffle()
+}
+
+func (p *MusicPlayer) ClearQueue(guildID string) {
+	manager, ok := p.PlayerManagers[guildID]
+	if !ok {
+		return
+	}
+
+	manager.Clear()
+}
+
+func (p *MusicPlayer) RemoveDuplicates(guildID string) {
+	manager, ok := p.PlayerManagers[guildID]
+	if !ok {
+		return
+	}
+
+	manager.RemoveDuplicates()
+}
+
+func (p *MusicPlayer) Skip(guildID string) {
+	manager, ok := p.PlayerManagers[guildID]
+	if !ok {
+		return
+	}
+
+	if manager.RepeatingMode == RepeatingModeSong {
+		manager.RepeatingMode = RepeatingModeOff
+	}
+
+	p.nextTrack(guildID, manager.Player.ChannelID().String())
+}
+
+func (p *MusicPlayer) NowPlaying(guildID string) lavalink.AudioTrack {
+	manager, ok := p.PlayerManagers[guildID]
+	if !ok {
+		return nil
+	}
+
+	return manager.Player.PlayingTrack()
+}
+
+func (p *MusicPlayer) GetQueue(guildID string) []lavalink.AudioTrack {
+	manager, ok := p.PlayerManagers[guildID]
+	if !ok {
+		return nil
+	}
+
+	return manager.Queue
+}
+
+func (p *MusicPlayer) GetTotalQueueTime(guildID string) time.Duration {
+	manager, ok := p.PlayerManagers[guildID]
+	if !ok {
+		return 0
+	}
+
+	return manager.QueueDuration()
+}
+
+func (p *MusicPlayer) Disconnect(guildID string) {
+	manager, ok := p.PlayerManagers[guildID]
+	if !ok {
+		return
+	}
+
+	delete(p.PlayerManagers, guildID)
+	manager.Destroy()
+	_ = discordutils.LeaveVoiceChannel(p.discordSession, guildID)
+}
+
+func (p *MusicPlayer) Destroy() {
+	p.lavalinkManager.Destroy()
 }
