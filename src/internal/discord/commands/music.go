@@ -1,6 +1,7 @@
 package discord
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -99,74 +100,105 @@ var MusicCommands = &CommandDefinition{
 				return
 			}
 
-			if i.ApplicationCommandData().Options[0].Name == "play" {
+			defer func() {
+				if r := recover(); r != nil {
+					sendMessageResponse(s, i, "r.(error)")
+				}
+			}()
+
+			switch i.ApplicationCommandData().Options[0].Name {
+			case "play":
 				playerChannelID := discordutils.GetInteractionUserVoiceChannelID(s, i.Interaction)
 				query := i.ApplicationCommandData().Options[0].Options[0].StringValue()
 
 				requestedBy := fmt.Sprintf("%s#%s", i.Member.User.Username, i.Member.User.Discriminator)
 				musicPlayer.PlayQuery(i.GuildID, playerChannelID, i.ChannelID, requestedBy, query)
 
-				sendMessageResponse(s, i, "Playing query...")
-
-				return
-			}
-
-			if !musicPlayer.PlayerExists(i.GuildID) {
-				sendMessageResponse(s, i, "Not running in a channel! Try playing something first.")
-				return
-			}
-
-			switch i.ApplicationCommandData().Options[0].Name {
 			case "stop":
-				musicPlayer.Stop(i.GuildID)
+				pm := musicPlayer.GetPlayerManager(i.GuildID)
+				pm.Player.Pause(true)
+
 				sendMessageResponse(s, i, "Stopped playback")
+
 			case "resume":
-				musicPlayer.Resume(i.GuildID)
+				pm := musicPlayer.GetPlayerManager(i.GuildID)
+				pm.Player.Pause(false)
+
 				sendMessageResponse(s, i, "Resuming playback")
+
 			case "queue":
-				displayQueue(s, i, musicPlayer)
+				pm := musicPlayer.GetPlayerManager(i.GuildID)
+
+				displayQueue(s, i, pm)
+
 			case "shuffle":
-				musicPlayer.Shuffle(i.GuildID)
+				pm := musicPlayer.GetPlayerManager(i.GuildID)
+				pm.Queue.Shuffle()
+
 				sendMessageResponse(s, i, "Queue shuffled")
+
 			case "skip":
-				musicPlayer.Skip(i.GuildID)
+				pm := musicPlayer.GetPlayerManager(i.GuildID)
+				pm.SkipTrack()
+
 				sendMessageResponse(s, i, "Skipped currently playing audio")
+
 			case "clear":
-				musicPlayer.ClearQueue(i.GuildID)
+				pm := musicPlayer.GetPlayerManager(i.GuildID)
+				pm.Queue.Clear()
+
 				sendMessageResponse(s, i, "Cleared queue")
+
 			case "nowplaying":
-				displayNowPlaying(s, i, musicPlayer)
+				pm := musicPlayer.GetPlayerManager(i.GuildID)
+
+				displayNowPlaying(s, i, pm)
+
 			case "loop":
-				musicPlayer.ToggleLoopingState(i.GuildID)
+				pm := musicPlayer.GetPlayerManager(i.GuildID)
+				pm.ToggleLoopingState()
+
 			case "removeduplicates":
-				musicPlayer.RemoveDuplicates(i.GuildID)
+				pm := musicPlayer.GetPlayerManager(i.GuildID)
+				pm.Queue.RemoveDuplicates()
+
 				sendMessageResponse(s, i, "Removed duplicate tracks")
+
 			case "disconnect":
+				_ = musicPlayer.GetPlayerManager(i.GuildID)
+
 				musicPlayer.Disconnect(i.GuildID)
+
 				sendMessageResponse(s, i, "See ya!")
 			}
 		},
 	},
 }
 
-func displayQueue(s *discordgo.Session, i *discordgo.InteractionCreate, p *musicplayer.MusicPlayer) {
+func verifyMusicPlayer(p *musicplayer.MusicPlayer, guildID string) {
+	if !p.PlayerExists(guildID) {
+		panic(errors.New("Not running in a channel! Try playing something first."))
+	}
+}
+
+func displayQueue(s *discordgo.Session, i *discordgo.InteractionCreate, m *musicplayer.PlayerManager) {
 	guild, _ := s.Guild(i.GuildID)
 
 	embed := &discordgo.MessageEmbed{
 		Title:       fmt.Sprintf("Queue for %s", guild.Name),
-		Description: getQueueListString(p, i.GuildID),
+		Description: getQueueListString(m, i.GuildID),
 		Color:       0x0345fc,
 	}
 
 	sendEmbedResponse(s, i, embed)
 }
 
-func displayNowPlaying(s *discordgo.Session, i *discordgo.InteractionCreate, p *musicplayer.MusicPlayer) {
-	np := p.NowPlaying(i.GuildID)
+func displayNowPlaying(s *discordgo.Session, i *discordgo.InteractionCreate, m *musicplayer.PlayerManager) {
+	np := m.Player.PlayingTrack()
 	npLength := time.Duration(np.Info().Length) * time.Millisecond
 
 	seglength := npLength / 30
-	elapsed := p.TrackPosition(i.GuildID)
+	elapsed := m.TrackPosition()
 	seekPosition := int(math.Round(elapsed.Seconds() / seglength.Seconds()))
 
 	var b strings.Builder
@@ -217,10 +249,10 @@ func getQueueTrackString(item lavalink.AudioTrack) string {
 	return fmt.Sprintf("[%s](%s) | `%s` `Requested by: %s`\n\n", item.Info().Title, *item.Info().URI, sDuration, item.UserData())
 }
 
-func getQueueListString(p *musicplayer.MusicPlayer, guildID string) string {
+func getQueueListString(m *musicplayer.PlayerManager, guildID string) string {
 	var b strings.Builder
-	active := p.NowPlaying(guildID)
-	queue := p.GetQueue(guildID)
+	active := m.Player.PlayingTrack()
+	queue := m.Queue.Get()
 
 	if len(queue) == 0 && active == nil {
 		return "Queue empty! Add some music!"
@@ -244,11 +276,11 @@ func getQueueListString(p *musicplayer.MusicPlayer, guildID string) string {
 	}
 
 	loopQueueState := ""
-	if p.QueueLoopState(guildID) == musicplayer.RepeatingModeQueue {
+	if m.RepeatingMode == musicplayer.RepeatingModeQueue {
 		loopQueueState = " | 🔁 Enabled"
 	}
 
-	queueDurationString := getDurationString(p.GetTotalQueueTime(guildID))
+	queueDurationString := getDurationString(m.Queue.Duration())
 	fmt.Fprintf(&b, "**%d songs in queue | %s total length%s**", len(queue), queueDurationString, loopQueueState)
 
 	return b.String()
