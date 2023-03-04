@@ -1,5 +1,5 @@
 @Library('voidwellJenkinsPipeline') _
-golangDocker([
+dotnetDocker([
   dockerRepository: 'hvraverse/ramiel',
   dockerServiceName: 'ramiel',
   releaseRepository: 'hvraverse/verseconfig',

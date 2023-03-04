@@ -1,0 +1,41 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.32014.148
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ramiel.Bot", "src\Ramiel.Bot\Ramiel.Bot.csproj", "{8D0C2146-EE72-4C39-AE8B-FC00A8E83EED}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{CA1C5231-C3EB-4422-8A9F-C5E343099F62}"
+	ProjectSection(SolutionItems) = preProject
+		.gitignore = .gitignore
+		Directory.Build.props = Directory.Build.props
+		docker-compose.dev.yml = docker-compose.dev.yml
+		docker-compose.yml = docker-compose.yml
+		Dockerfile = Dockerfile
+		Jenkinsfile = Jenkinsfile
+	EndProjectSection
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ramiel.Discord", "src\Ramiel.Discord\Ramiel.Discord.csproj", "{D5CF6F30-32DA-4B38-9CE5-3D1A03B4ACB4}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{8D0C2146-EE72-4C39-AE8B-FC00A8E83EED}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8D0C2146-EE72-4C39-AE8B-FC00A8E83EED}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8D0C2146-EE72-4C39-AE8B-FC00A8E83EED}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8D0C2146-EE72-4C39-AE8B-FC00A8E83EED}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D5CF6F30-32DA-4B38-9CE5-3D1A03B4ACB4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D5CF6F30-32DA-4B38-9CE5-3D1A03B4ACB4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D5CF6F30-32DA-4B38-9CE5-3D1A03B4ACB4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D5CF6F30-32DA-4B38-9CE5-3D1A03B4ACB4}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {CC3A4486-8D77-40CD-ADD0-B97535CD7066}
+	EndGlobalSection
+EndGlobal

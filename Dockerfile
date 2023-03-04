@@ -1,20 +1,24 @@
-FROM golang:1.18-alpine AS build-env
-
-RUN apk add -U --no-cache build-base git
-
-RUN mkdir /app
-RUN mkdir /build
+FROM mcr.microsoft.com/dotnet/sdk:6.0 AS build-env
 WORKDIR /app
 
-ADD ./src /app
+# Copy and restore as distinct layers
+COPY *.sln ./
+COPY ./src/Ramiel.Bot/*.csproj ./src/Ramiel.Bot/
+COPY ./src/Ramiel.Discord/*.csproj ./src/Ramiel.Discord/
 
-RUN go get -d ./... && \
-    go build -v -o /build ./cmd/ramiel
+RUN dotnet restore
 
-FROM alpine:latest
+# Copy everything else and build
+COPY . ./
+RUN find -type d -name bin -prune -exec rm -rf {} \; && find -type d -name obj -prune -exec rm -rf {} \;
+RUN dotnet publish -c Release -o /app/out
 
-RUN apk add -U --no-cache iputils ca-certificates tzdata
+# Build runtime image
+FROM mcr.microsoft.com/dotnet/aspnet:6.0
 
-COPY --from=build-env /build /bin
+# Copy the app
+WORKDIR /app
+COPY --from=build-env /app/out .
 
-CMD [ "/bin/ramiel" ]
+# Start the app
+ENTRYPOINT dotnet Ramiel.Bot.dll
