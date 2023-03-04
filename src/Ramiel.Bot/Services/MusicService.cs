@@ -1,5 +1,6 @@
 ﻿using Discord;
 using Microsoft.Extensions.Logging;
+using Ramiel.Bot.Models;
 using Victoria.Node;
 using Victoria.Node.EventArgs;
 using Victoria.Player;
@@ -11,6 +12,8 @@ namespace Ramiel.Bot.Services
     {
         private readonly LavaNode _lavaNode;
         private readonly ILogger _logger;
+
+        private readonly Dictionary<ulong, LoopTypeEnum> _guildLoopType = new();
 
         public MusicService(LavaNode lavaNode, ILogger<MusicService> logger)
         {
@@ -137,6 +140,8 @@ namespace Ramiel.Bot.Services
                 return;
             }
 
+            SetLoopType(guild, LoopTypeEnum.Off);
+
             await player.SkipAsync();
         }
 
@@ -170,6 +175,11 @@ namespace Ramiel.Bot.Services
             var voiceChannel = player.VoiceChannel;
 
             await _lavaNode.LeaveAsync(voiceChannel);
+
+            if (_guildLoopType.ContainsKey(guild.Id))
+            {
+                _guildLoopType.Remove(guild.Id);
+            }
         }
 
         public async Task RemoveDuplicatesAsync(IGuild guild)
@@ -179,18 +189,43 @@ namespace Ramiel.Bot.Services
                 return;
             }
 
-            var tracks = player.Vueue.ToArray();
-
-            for (var i = 0; i < tracks.Length; i++)
+            for (var i = 0; i < player.Vueue.Count - 1; i++)
             {
-                for (var k = i + 1; k < tracks.Length; k++)
+                for (var k = i + 1; k < player.Vueue.Count; k++)
                 {
-                    if (tracks[i].Id == tracks[k].Id)
+                    if (player.Vueue.ElementAt(i).Id == player.Vueue.ElementAt(k).Id)
                     {
-                        player.Vueue.Remove(tracks[k]);
+                        player.Vueue.RemoveAt(k);
                         k--;
                     }
                 }
+            }
+        }
+
+        public async Task LoopAsync(IGuild guild, LoopTypeEnum loopType)
+        {
+            if (!_lavaNode.TryGetPlayer(guild, out var player))
+            {
+                return;
+            }
+
+            SetLoopType(guild, loopType);
+        }
+
+        public LoopTypeEnum GetLoopType(IGuild guild)
+        {
+            return _guildLoopType.GetValueOrDefault(guild.Id, LoopTypeEnum.Off);
+        }
+
+        private void SetLoopType(IGuild guild, LoopTypeEnum loopType)
+        {
+            if (_guildLoopType.ContainsKey(guild.Id) && loopType == LoopTypeEnum.Off)
+            {
+                _guildLoopType.Remove(guild.Id);
+            }
+            else
+            {
+                _guildLoopType[guild.Id] = loopType;
             }
         }
 
@@ -206,15 +241,28 @@ namespace Ramiel.Bot.Services
 
         private Task OnWebSocketClosedAsync(WebSocketClosedEventArg arg)
         {
+            SetLoopType(arg.Guild, LoopTypeEnum.Off);
+
             _logger.LogCritical($"{arg.Code} {arg.Reason}");
             return Task.CompletedTask;
         }
 
-        private static async Task OnTrackEndAsync(TrackEndEventArg<LavaPlayer<LavaTrack>, LavaTrack> arg)
+        private async Task OnTrackEndAsync(TrackEndEventArg<LavaPlayer<LavaTrack>, LavaTrack> arg)
         {
             if (arg.Reason is TrackEndReason.Stopped or TrackEndReason.Replaced)
             {
                 return;
+            }
+
+            var loopType = GetLoopType(arg.Player.VoiceChannel.Guild);
+            if (loopType == LoopTypeEnum.Track)
+            {
+                await arg.Player.PlayAsync(arg.Track);
+                return;
+            }
+            else if (loopType == LoopTypeEnum.Queue)
+            {
+                arg.Player.Vueue.Enqueue(arg.Track);
             }
 
             if (arg.Player.Vueue.TryDequeue(out var track))

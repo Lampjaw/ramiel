@@ -1,6 +1,7 @@
 ﻿using Discord;
 using Discord.Interactions;
 using Ramiel.Bot.Attributes;
+using Ramiel.Bot.Models;
 using Ramiel.Bot.Services;
 using System.Text;
 using Victoria.Player;
@@ -80,7 +81,7 @@ namespace Ramiel.Bot.Modules
 
             if (!queue.Any() && nowPlaying == null)
             {
-                await Context.Channel.SendMessageAsync("Queue empty! Add some music!");
+                await RespondAsync("Queue empty! Add some music!");
                 return;
             }
 
@@ -106,8 +107,16 @@ namespace Ramiel.Bot.Modules
                 }
             }
 
+            var loopDescription = "";
+            var loopType = _musicService.GetLoopType(Context.Guild);
+            if (loopType != LoopTypeEnum.Off)
+            {
+                loopDescription = $" | 🔁[{loopType}] Enabled";
+            }
+
             var playerDuration = _musicService.GetPlayerDuration(Context.Guild);
-            sb.AppendLine($"**{queue.Count()} tracks in queue | {GetDurationString(playerDuration)} total length**");
+            sb.AppendLine();
+            sb.AppendLine($"**{queue.Count()} tracks in queue | {GetDurationString(playerDuration)} total length{loopDescription}**");
 
             var embed = new EmbedBuilder()
                 .WithTitle($"Queue for {Context.Guild.Name}")
@@ -177,7 +186,7 @@ namespace Ramiel.Bot.Modules
 
             var sb = new StringBuilder();
 
-            sb.Append('`');
+            sb.Append($"{GetDurationString(track.Position)} `");
 
             var segLength = track.Duration / 30;
             var seekPosition = (int)Math.Round(track.Position.TotalSeconds / segLength.TotalSeconds);
@@ -187,9 +196,7 @@ namespace Ramiel.Bot.Modules
                 sb.Append(i == seekPosition ? "🔘" : "▬");
             }
 
-            sb.Append('`');
-
-            sb.AppendLine($"{GetDurationString(track.Position)} / {GetDurationString(track.Duration)}");
+            sb.Append($"` {GetDurationString(track.Duration)}");
 
             var embed = new EmbedBuilder()
                 .WithAuthor("Now Playing 🎵")
@@ -226,6 +233,20 @@ namespace Ramiel.Bot.Modules
             }
 
             await _musicService.RemoveDuplicatesAsync(Context.Guild);
+
+            await RespondAsync("Duplicate tracks removed");
+        }
+
+        [SlashCommand("loop", "Toggle track looping")]
+        public async Task LoopAsync(LoopTypeEnum loopType)
+        {
+            if (!_musicService.IsPlaying(Context.Guild))
+            {
+                await RespondAsync("Try playing something first!");
+                return;
+            }
+
+            await _musicService.LoopAsync(Context.Guild, loopType);
 
             await RespondAsync("Duplicate tracks removed");
         }
