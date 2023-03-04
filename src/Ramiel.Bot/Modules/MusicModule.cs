@@ -248,7 +248,7 @@ namespace Ramiel.Bot.Modules
 
             await _musicService.LoopAsync(Context.Guild, loopType);
 
-            await RespondAsync("Duplicate tracks removed");
+            await RespondAsync($"Looping set to {loopType}");
         }
 
         private static string GetDurationString(TimeSpan duration)
