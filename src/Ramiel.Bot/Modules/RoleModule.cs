@@ -95,6 +95,7 @@ namespace Ramiel.Bot.Modules
         }
 
         [SlashCommand("add", "Register a reaction role emote")]
+        [DefaultMemberPermissions(GuildPermission.ManageRoles)]
         public async Task AddReactionRoleAsync(string messageId, string emote, SocketRole role)
         {
             if (!ulong.TryParse(messageId, out var messageIdValue))
@@ -139,6 +140,7 @@ namespace Ramiel.Bot.Modules
         }
 
         [SlashCommand("list", "List registered reaction roles")]
+        [DefaultMemberPermissions(GuildPermission.ManageRoles)]
         public async Task ListReactionRolesAsync()
         {
             using (var dbContext = _dbContextHelper.GetDbContext())
@@ -167,6 +169,7 @@ namespace Ramiel.Bot.Modules
         }
 
         [SlashCommand("remove", "Remove a reaction role")]
+        [DefaultMemberPermissions(GuildPermission.ManageRoles)]
         public async Task RemoveReactionRoleAsync(string messageId, string emote)
         {
             if (!ulong.TryParse(messageId, out var messageIdValue))
@@ -201,6 +204,7 @@ namespace Ramiel.Bot.Modules
         }
 
         [SlashCommand("clear", "Remove all reaction roles")]
+        [DefaultMemberPermissions(GuildPermission.ManageRoles)]
         public async Task RemoveAllReactionRolesAsync()
         {
             using (var dbContext = _dbContextHelper.GetDbContext())
