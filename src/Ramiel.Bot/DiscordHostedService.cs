@@ -1,13 +1,11 @@
 ﻿using Discord;
 using Discord.Interactions;
 using Discord.WebSocket;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Ramiel.Discord;
 using System.Reflection;
 using Victoria;
-using Victoria.Node;
 
 namespace Ramiel.Bot
 {

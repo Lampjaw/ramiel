@@ -3,11 +3,12 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Ramiel.Bot;
+using Ramiel.Bot.Data;
 using Ramiel.Bot.Services;
 using Ramiel.Discord;
 using Victoria;
 
-using IHost host = Host.CreateDefaultBuilder(args)
+IHost host = Host.CreateDefaultBuilder(args)
     .ConfigureAppConfiguration((hostingContext, builder) =>
     {
         builder.Sources.Clear();
@@ -20,11 +21,11 @@ using IHost host = Host.CreateDefaultBuilder(args)
 
         services.AddDiscordServices(config =>
         {
-            config.DiscordSocket.GatewayIntents = GatewayIntents.GuildVoiceStates | GatewayIntents.GuildMembers | GatewayIntents.Guilds;
+            config.DiscordSocket.GatewayIntents = GatewayIntents.GuildVoiceStates | GatewayIntents.GuildMembers | GatewayIntents.Guilds | GatewayIntents.GuildMessageReactions;
         });
 
         var botConfiguration = hostContext.Configuration.Get<BotConfiguration>();
-
+        
         services.AddLavaNode(config =>
         {
             config.SelfDeaf = true;
@@ -37,6 +38,9 @@ using IHost host = Host.CreateDefaultBuilder(args)
         services.AddSingleton<MusicService>();
 
         services.AddHostedService<DiscordHostedService>();
+
+        services.AddSingleton<DbContextHelper>();
+        services.AddDbContext<BotDbContext>();
     })
     .Build();
 

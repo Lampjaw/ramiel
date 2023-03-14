@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.32014.148
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ramiel.Bot", "src\Ramiel.Bot\Ramiel.Bot.csproj", "{8D0C2146-EE72-4C39-AE8B-FC00A8E83EED}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Ramiel.Bot", "src\Ramiel.Bot\Ramiel.Bot.csproj", "{8D0C2146-EE72-4C39-AE8B-FC00A8E83EED}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{CA1C5231-C3EB-4422-8A9F-C5E343099F62}"
 	ProjectSection(SolutionItems) = preProject
@@ -12,10 +12,11 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		docker-compose.dev.yml = docker-compose.dev.yml
 		docker-compose.yml = docker-compose.yml
 		Dockerfile = Dockerfile
+		Dockerfile.debug = Dockerfile.debug
 		Jenkinsfile = Jenkinsfile
 	EndProjectSection
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ramiel.Discord", "src\Ramiel.Discord\Ramiel.Discord.csproj", "{D5CF6F30-32DA-4B38-9CE5-3D1A03B4ACB4}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Ramiel.Discord", "src\Ramiel.Discord\Ramiel.Discord.csproj", "{D5CF6F30-32DA-4B38-9CE5-3D1A03B4ACB4}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

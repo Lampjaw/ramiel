@@ -18,3 +18,4 @@ obj
 bin
 appsettings.dev.json
 docker-compose.dev.yml
+/src/data
