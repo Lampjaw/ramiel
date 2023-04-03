@@ -58,6 +58,8 @@ namespace Ramiel.Bot
             {
                 await _interactionService.RegisterCommandsGloballyAsync(true);
             }
+
+            await _client.SetGameAsync("*screaming geometrically*", type: ActivityType.Playing);
         }
 
         private async Task HandleInteractionAsync(SocketInteraction interaction)
