@@ -36,6 +36,7 @@ IHost host = Host.CreateDefaultBuilder(args)
         });
 
         services.AddSingleton<MusicService>();
+        services.AddSingleton<ReactionRoleStore>();
 
         services.AddHostedService<DiscordHostedService>();
 
