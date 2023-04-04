@@ -1,7 +1,10 @@
 ﻿using Discord;
 using Discord.Interactions;
 using Discord.WebSocket;
-using Ramiel.Bot.Services;
+using Microsoft.EntityFrameworkCore;
+using Ramiel.Bot.Data;
+using Ramiel.Bot.Data.Models;
+using System.Data;
 using System.Text;
 
 namespace Ramiel.Bot.Modules
@@ -11,26 +14,19 @@ namespace Ramiel.Bot.Modules
     [DefaultMemberPermissions(GuildPermission.ManageRoles)]
     public class RoleModule : InteractionModuleBase<SocketInteractionContext>
     {
-        private readonly ReactionRoleStore _reactionRoleStore;
-        private readonly SemaphoreSlim _reactionSemaphore = new SemaphoreSlim(1, 1);
+        private readonly DbContextHelper _dbContextHelper;
 
-        public RoleModule(DiscordSocketClient client, ReactionRoleStore reactionRoleStore)
+        public RoleModule(DiscordSocketClient client, DbContextHelper dbContextHelper)
         {
             client.ReactionAdded += OnReactionAdded;
             client.ReactionRemoved += OnReactionRemoved;
 
-            _reactionRoleStore = reactionRoleStore;
+            _dbContextHelper = dbContextHelper;
         }
 
         public async Task OnReactionAdded(Cacheable<IUserMessage, ulong> message, Cacheable<IMessageChannel, ulong> channel, SocketReaction reaction)
         {
             var guildChannel = await channel.GetOrDownloadAsync() as SocketGuildChannel;
-
-            if (!await _reactionRoleStore.IsGuildReactionMessageAsync(guildChannel.Guild.Id, message.Id))
-            {
-                return;
-            }
-
             var guildUser = guildChannel.GetUser(reaction.UserId);
             
             var emoteId = reaction.Emote.ToString();
@@ -44,40 +40,29 @@ namespace Ramiel.Bot.Modules
                 return;
             }
 
-            var guildReaction = await _reactionRoleStore.TryGetAsync(guildChannel.Guild.Id, message.Id, emoteId);
-            if (guildReaction == null || guildUser.Roles.Any(a => a.Id == guildReaction.RoleId))
+            using (var dbContext = _dbContextHelper.GetDbContext())
             {
-                return;
-            }
+                var guildReaction = await dbContext.ReactionRoles.FindAsync(guildChannel.Guild.Id, message.Id, emoteId);
+                if (guildReaction == null || guildUser.Roles.Any(a => a.Id == guildReaction.RoleId))
+                {
+                    return;
+                }
 
-            var role = guildChannel.Guild.GetRole(guildReaction.RoleId);
-            if (role == null)
-            {
-                await _reactionRoleStore.RemoveAsync(guildChannel.Guild.Id, message.Id, emoteId);
-                return;
-            }
-
-            try
-            {
-                await _reactionSemaphore.WaitAsync();
+                var role = guildChannel.Guild.GetRole(guildReaction.RoleId);
+                if (role == null)
+                {
+                    dbContext.ReactionRoles.Remove(guildReaction);
+                    await dbContext.SaveChangesAsync();
+                    return;
+                }
 
                 await guildUser.AddRoleAsync(role);
-            }
-            finally
-            {
-                _reactionSemaphore.Release();
             }
         }
 
         public async Task OnReactionRemoved(Cacheable<IUserMessage, ulong> message, Cacheable<IMessageChannel, ulong> channel, SocketReaction reaction)
         {
             var guildChannel = await channel.GetOrDownloadAsync() as SocketGuildChannel;
-
-            if (!await _reactionRoleStore.IsGuildReactionMessageAsync(guildChannel.Guild.Id, message.Id))
-            {
-                return;
-            }
-
             var guildUser = guildChannel.GetUser(reaction.UserId);
 
             var emoteId = reaction.Emote.ToString();
@@ -91,28 +76,23 @@ namespace Ramiel.Bot.Modules
                 return;
             }
 
-            var guildReaction = await _reactionRoleStore.TryGetAsync(guildChannel.Guild.Id, message.Id, emoteId);
-            if (guildReaction == null)
+            using (var dbContext = _dbContextHelper.GetDbContext())
             {
-                return;
-            }
+                var guildReaction = await dbContext.ReactionRoles.FindAsync(guildChannel.Guild.Id, message.Id, emoteId);
+                if (guildReaction == null)
+                {
+                    return;
+                }
 
-            var role = guildChannel.Guild.GetRole(guildReaction.RoleId);
-            if (role == null)
-            {
-                await _reactionRoleStore.RemoveAsync(guildChannel.Guild.Id, message.Id, emoteId);
-                return;
-            }
-
-            try
-            {
-                await _reactionSemaphore.WaitAsync();
+                var role = guildChannel.Guild.GetRole(guildReaction.RoleId);
+                if (role == null)
+                {
+                    dbContext.ReactionRoles.Remove(guildReaction);
+                    await dbContext.SaveChangesAsync();
+                    return;
+                }
 
                 await guildUser.RemoveRoleAsync(role);
-            }
-            finally
-            {
-                _reactionSemaphore.Release();
             }
         }
 
@@ -131,7 +111,31 @@ namespace Ramiel.Bot.Modules
                 emoteId = emoteValue.Id.ToString();
             }
 
-            await _reactionRoleStore.AddOrUpdateRoleIdAsync(Context.Guild.Id, messageIdValue, emoteId, emote, role.Id);
+            using (var dbContext = _dbContextHelper.GetDbContext())
+            {
+                var existing = await dbContext.ReactionRoles.FindAsync(Context.Guild.Id, messageIdValue, emoteId);
+                if (existing != null)
+                {
+                    existing.RoleId = role.Id;
+
+                    dbContext.Update(existing);
+                    await dbContext.SaveChangesAsync();
+                }
+                else
+                {
+                    var reactionRole = new ReactionRole
+                    {
+                        GuildId = Context.Guild.Id,
+                        MessageId = messageIdValue,
+                        EmoteId = emoteId,
+                        EmoteDisplay = emote,
+                        RoleId = role.Id
+                    };
+
+                    dbContext.Add(reactionRole);
+                    await dbContext.SaveChangesAsync();
+                }
+            }
 
             await RespondAsync("Registered!");
         }
@@ -139,26 +143,29 @@ namespace Ramiel.Bot.Modules
         [SlashCommand("list", "List registered reaction roles")]
         public async Task ListReactionRolesAsync()
         {
-            var roles = await _reactionRoleStore.GetAllForGuildIdAsync(Context.Guild.Id);
-            if (roles == null || !roles.Any())
+            using (var dbContext = _dbContextHelper.GetDbContext())
             {
-                await RespondAsync("None found.");
-                return;
+                var roles = await dbContext.ReactionRoles.Where(a => a.GuildId == Context.Guild.Id).ToListAsync();
+                if (roles == null || !roles.Any())
+                {
+                    await RespondAsync("None found.");
+                    return;
+                }
+
+                var sb = new StringBuilder();
+                sb.AppendLine("MessageId, EmoteId, Role");
+                foreach (var role in roles)
+                {
+                    sb.AppendLine($"{role.MessageId}, {role.EmoteDisplay}, <@&{role.RoleId}>");
+                }
+
+                var embed = new EmbedBuilder()
+                    .WithTitle("Reaction roles")
+                    .WithDescription(sb.ToString())
+                    .Build();
+
+                await RespondAsync(embed: embed);
             }
-
-            var sb = new StringBuilder();
-            sb.AppendLine("MessageId, EmoteId, Role");
-            foreach (var role in roles)
-            {
-                sb.AppendLine($"{role.MessageId}, {role.EmoteDisplay}, <@&{role.RoleId}>");
-            }
-
-            var embed = new EmbedBuilder()
-                .WithTitle("Reaction roles")
-                .WithDescription(sb.ToString())
-                .Build();
-
-            await RespondAsync(embed: embed);
         }
 
         [SlashCommand("remove", "Remove a reaction role")]
@@ -176,7 +183,21 @@ namespace Ramiel.Bot.Modules
                 emoteId = emoteValue.Id.ToString();
             }
 
-            await _reactionRoleStore.RemoveAsync(Context.Guild.Id, messageIdValue, emoteId);
+            using (var dbContext = _dbContextHelper.GetDbContext())
+            {
+                var existing = await dbContext.ReactionRoles.FindAsync(Context.Guild.Id, messageIdValue, emoteId);
+                if (existing != null)
+                {
+                    dbContext.Remove(existing);
+
+                    await dbContext.SaveChangesAsync();
+                }
+                else
+                {
+                    await RespondAsync("Failed to find a matching reaction role.");
+                    return;
+                }
+            }
 
             await RespondAsync("Removed!");
         }
@@ -184,7 +205,16 @@ namespace Ramiel.Bot.Modules
         [SlashCommand("clear", "Remove all reaction roles")]
         public async Task RemoveAllReactionRolesAsync()
         {
-            await _reactionRoleStore.RemoveAllForGuildIdAsync(Context.Guild.Id);
+            using (var dbContext = _dbContextHelper.GetDbContext())
+            {
+                var allRoles = await dbContext.ReactionRoles.Where(a => a.GuildId == Context.Guild.Id).ToListAsync();
+                if (allRoles != null && allRoles.Any())
+                {
+                    dbContext.RemoveRange(allRoles);
+
+                    await dbContext.SaveChangesAsync();
+                }
+            }
 
             await RespondAsync("Removed!");
         }
